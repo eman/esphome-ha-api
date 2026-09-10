@@ -26,7 +26,10 @@ jobs:
       matrix:
         # Each config names its own board. Xtensa and RISC-V both get built:
         # they disagree about integer types often enough to matter.
-        config: [examples/basic.yaml, tests/ci/esp32p4.yaml]
+        config:
+          - examples/basic.yaml
+          - examples/weather_forecast.yaml
+          - tests/ci/esp32p4.yaml
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

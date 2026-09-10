@@ -70,3 +70,36 @@ sensor:
 button:
   - platform: ha_history
     name: Reload history
+
+# ha_action too: this board has PSRAM, so it is the fixture that compiles the
+# retained-document branch, and RISC-V disagrees with Xtensa about integer
+# types often enough that the path walker deserves both.
+ha_action:
+  - id: forecast
+    action: weather.get_forecasts
+    data:
+      entity_id: weather.home
+      type: hourly
+    update_interval: 30min
+    retain: true
+    on_response:
+      - lambda: 'ESP_LOGD("ci", "%u", (unsigned) response["weather.home"]["forecast"].as<JsonArrayConst>().size());'
+    on_error:
+      - lambda: 'ESP_LOGW("ci", "%s", error.c_str());'
+
+  - id: rendered
+    template: '{{ states.person | selectattr("state", "eq", "home") | list | count }}'
+    update_interval: 5min
+
+text_sensor:
+  - platform: ha_action
+    ha_action_id: forecast
+    name: CI condition
+    path: '["weather.home"].forecast[0].condition'
+
+binary_sensor:
+  - platform: ha_action
+    ha_action_id: forecast
+    name: CI rain
+    path: '["weather.home"].forecast[-1].precipitation'
+    threshold: 0.1

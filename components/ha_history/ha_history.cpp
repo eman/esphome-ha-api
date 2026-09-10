@@ -362,7 +362,9 @@ void HaHistory::dump_config() {
                 (unsigned) (MAX_BACKOFF_MS / 1000));
 }
 
+#ifdef USE_BUTTON
 void HaHistoryReloadButton::dump_config() { LOG_BUTTON("", "Home Assistant history reload", this); }
+#endif
 
 }  // namespace ha_history
 }  // namespace esphome

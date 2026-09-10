@@ -1,0 +1,108 @@
+# The case this component exists for.
+#
+# Getting a forecast onto an ESPHome panel normally means building template
+# sensors in Home Assistant that flatten `weather.get_forecasts` into
+# attributes, then subscribing to those - device presentation logic living in
+# the hub, rebuilt for every dashboard. Here the panel asks for the forecast
+# itself and binds the fields it wants.
+#
+# Requirements on the Home Assistant side:
+#   * the device is adopted in the ESPHome integration, and "Allow the device
+#     to perform Home Assistant actions" is enabled in its options
+#   * Home Assistant 2025.x or newer (action responses)
+
+esphome:
+  name: forecast-demo
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+
+external_components:
+  - source: github://eman/esphome-ha-api
+
+ha_action:
+  - id: forecast
+    action: weather.get_forecasts
+    data:
+      entity_id: weather.home
+      type: hourly
+    update_interval: 30min
+    # Keeps the parsed response alive between refreshes so a lambda can walk
+    # the whole array - for a chart, say. Costs memory; leave it off if every
+    # value you want has a `path:` below.
+    retain: true
+    on_response:
+      - lambda: |-
+          ESP_LOGI("demo", "%u forecast entries",
+                   (unsigned) response["weather.home"]["forecast"].as<JsonArrayConst>().size());
+    on_error:
+      - lambda: 'ESP_LOGW("demo", "forecast failed: %s", error.c_str());'
+
+  # Anything Home Assistant's template engine can compute, without an action
+  # behind it. Rendered server-side, so only the result crosses the wire.
+  - id: house
+    template: >-
+      {{ {'people_home': states.person | selectattr('state', 'eq', 'home') | list | count,
+          'next_alarm': state_attr('sensor.next_alarm', 'friendly_name') | default('none')} | tojson }}
+    update_interval: 5min
+
+sensor:
+  # Home Assistant keys responses by entity id, and entity ids contain dots -
+  # hence the bracket form. `forecast[0]` is the current hour.
+  - platform: ha_action
+    ha_action_id: forecast
+    name: Temperature now
+    path: '["weather.home"].forecast[0].temperature'
+    device_class: temperature
+    unit_of_measurement: °C
+    accuracy_decimals: 1
+
+  - platform: ha_action
+    ha_action_id: forecast
+    name: Temperature in 3 hours
+    path: '["weather.home"].forecast[3].temperature'
+    device_class: temperature
+    unit_of_measurement: °C
+    accuracy_decimals: 1
+
+  - platform: ha_action
+    ha_action_id: house
+    name: People home
+    path: people_home
+
+text_sensor:
+  - platform: ha_action
+    ha_action_id: forecast
+    name: Condition now
+    path: '["weather.home"].forecast[0].condition'
+
+  - platform: ha_action
+    ha_action_id: house
+    name: Next alarm
+    path: next_alarm
+
+binary_sensor:
+  - platform: ha_action
+    ha_action_id: forecast
+    name: Rain in the next hour
+    path: '["weather.home"].forecast[1].precipitation'
+    # Without a threshold the value is read as a boolean; with one it is read
+    # as a number and compared, which is what a millimetre figure needs.
+    threshold: 0.1
+
+button:
+  - platform: ha_action
+    ha_action_id: forecast
+    name: Refresh forecast

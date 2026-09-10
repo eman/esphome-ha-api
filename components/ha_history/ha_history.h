@@ -16,10 +16,14 @@
 // sensor to ask about next, and how hard to retry when Home Assistant says
 // nothing at all.
 
+#include "esphome/core/defines.h"
+
 #include <string>
 #include <vector>
 
+#ifdef USE_BUTTON
 #include "esphome/components/button/button.h"
+#endif
 #include "esphome/components/ha_action/action_client.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
@@ -76,6 +80,10 @@ class HaHistory : public Component {
   static constexpr uint32_t SEAM_DELAY_MS = 420000;   // 7 min: HA's newest row lags up to 5
 };
 
+// Only when the config actually has a `button:` - the platform is optional, and
+// including button.h unconditionally makes every button-less config fail to
+// build.
+#ifdef USE_BUTTON
 /// A button that re-runs the backfill.
 class HaHistoryReloadButton : public button::Button, public Component {
  public:
@@ -89,6 +97,7 @@ class HaHistoryReloadButton : public button::Button, public Component {
   }
   HaHistory *hub_{nullptr};
 };
+#endif  // USE_BUTTON
 
 }  // namespace ha_history
 }  // namespace esphome
