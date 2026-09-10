@@ -38,8 +38,8 @@ sensor:
       - script.execute: redraw
 ```
 
-No credentials, no HTTP client, no InfluxDB. Everything rides the encrypted API connection
-Home Assistant already holds to the device.
+No credentials and no HTTP client: it rides the encrypted API connection Home Assistant
+already holds to the device.
 
 ## How it works
 
