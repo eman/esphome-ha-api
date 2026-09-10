@@ -21,9 +21,6 @@ external_components:
   - source: github://eman/esphome-ha-api
 ```
 
-Leave out `components:`. These components depend on each other, and a `components:` list
-excludes anything it does not name.
-
 ## Requirements
 
 - **Home Assistant 2025.x or newer**, for action responses in the ESPHome integration. Older
