@@ -3,3 +3,4 @@ ci/
 __pycache__/
 *.pyc
 .esphome/
+tests/ci/secrets.yaml

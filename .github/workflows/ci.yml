@@ -13,22 +13,23 @@ jobs:
       - run: make -C tests test
 
   compile:
-    name: esphome compile (${{ matrix.example }}, ${{ matrix.board }})
+    name: ${{ matrix.config }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        example: [basic]
-        board: [esp32dev, esp32-p4-evboard]
+        # Each config names its own board. Xtensa and RISC-V both get built:
+        # they disagree about integer types often enough to matter.
+        config: [examples/basic.yaml, tests/ci/esp32p4.yaml]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - run: pip install esphome
-      - name: Point the example at this checkout
+      - name: Build against this checkout rather than the published component
         run: |
-          mkdir -p ci && cp examples/${{ matrix.example }}.yaml ci/
+          mkdir -p ci && cp "${{ matrix.config }}" ci/device.yaml
           # Throwaway credentials so `esphome compile` has something to
           # validate. The API key is generated per run rather than hardcoded:
           # a literal here would look exactly like a real key to anyone reading
@@ -41,11 +42,10 @@ jobs:
           EOF
           python - <<'PY'
           import pathlib, re
-          p = pathlib.Path("ci/${{ matrix.example }}.yaml")
-          s = p.read_text()
-          s = re.sub(r"source: github://eman/esphome-ha-history",
-                     "source:\n      type: local\n      path: ../components", s)
-          s = re.sub(r"board: esp32dev", "board: ${{ matrix.board }}", s)
-          p.write_text(s)
+          p = pathlib.Path("ci/device.yaml")
+          p.write_text(re.sub(
+              r"source: github://eman/esphome-ha-history",
+              "source:\n      type: local\n      path: ../components",
+              p.read_text()))
           PY
-      - run: esphome compile ci/${{ matrix.example }}.yaml
+      - run: esphome compile ci/device.yaml
