@@ -17,7 +17,15 @@ the source files without declaring any requests of its own.
 from esphome import automation
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.const import CONF_ACTION, CONF_DATA, CONF_ID, CONF_TIMEOUT, CONF_UPDATE_INTERVAL
+from esphome.const import (
+    CONF_ACTION,
+    CONF_DATA,
+    CONF_DATA_TEMPLATE,
+    CONF_ID,
+    CONF_TIMEOUT,
+    CONF_UPDATE_INTERVAL,
+    CONF_VARIABLES,
+)
 from esphome.cpp_types import arduino_json_ns
 
 from .path import add_path, compile_path
@@ -72,7 +80,7 @@ def _validate(config):
                 f"`{CONF_TEMPLATE}` is itself a response template. Use one or the other.",
                 path=[CONF_RESPONSE_TEMPLATE],
             )
-        if config[CONF_DATA]:
+        if config[CONF_DATA] or config[CONF_DATA_TEMPLATE]:
             raise cv.Invalid(
                 f"`{CONF_DATA}` has no meaning with `{CONF_TEMPLATE}`: the action behind it is only a "
                 f"carrier. Put what you need inside the template, which is rendered by Home Assistant "
@@ -89,11 +97,19 @@ CONFIG_SCHEMA = cv.All(
             cv.Exclusive(CONF_ACTION, CONF_ACTION): cv.string_strict,
             cv.Exclusive(CONF_TEMPLATE, CONF_ACTION): cv.templatable(cv.string),
             cv.Optional(CONF_DATA, default={}): KEY_VALUE_SCHEMA,
+            # Rendered as Jinja by Home Assistant and literal_eval'd, which is
+            # the only way to pass a value that is not a string - a real list,
+            # say, where `data` would give you a one-element list holding it.
+            cv.Optional(CONF_DATA_TEMPLATE, default={}): KEY_VALUE_SCHEMA,
+            cv.Optional(CONF_VARIABLES, default={}): KEY_VALUE_SCHEMA,
             cv.Optional(CONF_RESPONSE_TEMPLATE): cv.templatable(cv.string),
             # Omitted means "once per API connection", which is right for
-            # anything that only changes when Home Assistant restarts.
-            cv.Optional(CONF_UPDATE_INTERVAL): cv.All(
-                cv.positive_not_null_time_period, cv.positive_time_period_milliseconds
+            # anything that only changes when Home Assistant restarts. `never`
+            # means the request runs only when something asks - a refresh
+            # button, or another request's on_response.
+            cv.Optional(CONF_UPDATE_INTERVAL): cv.Any(
+                cv.one_of("never", lower=True),
+                cv.All(cv.positive_not_null_time_period, cv.positive_time_period_milliseconds),
             ),
             cv.Optional(CONF_RETRY_INTERVAL, default="30s"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_TIMEOUT, default="20s"): cv.positive_time_period_milliseconds,
@@ -143,7 +159,11 @@ async def to_code(config):
     require_action_responses()
 
     var = cg.new_Pvariable(config[CONF_ID])
-    await cg.register_component(var, config)
+    # register_component calls set_update_interval() for any config carrying that
+    # key (cpp_helpers.py:245). Ours is not a PollingComponent interval - it also
+    # takes `never`, and "omitted" means something specific - so it is withheld
+    # here and applied below.
+    await cg.register_component(var, {k: v for k, v in config.items() if k != CONF_UPDATE_INTERVAL})
     cg.add(var.set_name(str(config[CONF_ID])))
 
     if CONF_TEMPLATE in config:
@@ -156,15 +176,21 @@ async def to_code(config):
         response_template = config.get(CONF_RESPONSE_TEMPLATE)
 
     for key, value in data.items():
-        templ = await cg.templatable(value, [], cg.std_string)
-        cg.add(var.add_data(key, templ))
+        cg.add(var.add_data(key, await cg.templatable(value, [], cg.std_string)))
+    for key, value in config[CONF_DATA_TEMPLATE].items():
+        cg.add(var.add_data_template(key, await cg.templatable(value, [], cg.std_string)))
+    for key, value in config[CONF_VARIABLES].items():
+        cg.add(var.add_variable(key, await cg.templatable(value, [], cg.std_string)))
 
     if response_template is not None:
         templ = await cg.templatable(response_template, [], cg.std_string)
         cg.add(var.set_response_template(templ))
 
     if (interval := config.get(CONF_UPDATE_INTERVAL)) is not None:
-        cg.add(var.set_update_interval(interval))
+        if interval == "never":
+            cg.add(var.set_manual(True))
+        else:
+            cg.add(var.set_update_interval(interval))
     cg.add(var.set_retry_interval(config[CONF_RETRY_INTERVAL]))
     cg.add(var.set_timeout(config[CONF_TIMEOUT]))
     cg.add(var.set_retain(config[CONF_RETAIN]))

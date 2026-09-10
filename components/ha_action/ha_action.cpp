@@ -45,7 +45,9 @@ void HaAction::on_api_change_(bool connected, uint32_t outage_ms) {
   this->timeouts_ = 0;
   this->backoff_ms_ = 0;
   this->next_due_ms_ = millis();
-  this->due_ = true;
+  // A manual request is not owed a fetch just because the API came back; it
+  // runs when something asks it to.
+  this->due_ = !this->manual_;
 }
 
 void HaAction::loop() {
@@ -69,9 +71,14 @@ bool HaAction::try_send_() {
   // `req` and sending from the same scope is what guarantees that.
   ActionRequest req;
   req.action = this->action_;
-  req.data.reserve(this->data_.size());
-  for (auto &kv : this->data_)
-    req.data.emplace_back(kv.first, kv.second.value());
+  auto evaluate = [](auto &dest, auto &src) {
+    dest.reserve(src.size());
+    for (auto &kv : src)
+      dest.emplace_back(kv.first, kv.second.value());
+  };
+  evaluate(req.data, this->data_);
+  evaluate(req.data_template, this->data_template_);
+  evaluate(req.variables, this->variables_);
   if (this->has_template_)
     req.response_template = this->response_template_.value();
 
@@ -202,7 +209,9 @@ void HaAction::refresh() {
 void HaAction::dump_config() {
   ESP_LOGCONFIG(TAG, "Home Assistant action '%s':", this->name_);
   ESP_LOGCONFIG(TAG, "  Action: %s", this->action_);
-  if (this->update_interval_ms_ == 0) {
+  if (this->manual_) {
+    ESP_LOGCONFIG(TAG, "  Update interval: never (runs on request)");
+  } else if (this->update_interval_ms_ == 0) {
     ESP_LOGCONFIG(TAG, "  Update interval: once per API connection");
   } else {
     ESP_LOGCONFIG(TAG, "  Update interval: %us", (unsigned) (this->update_interval_ms_ / 1000));

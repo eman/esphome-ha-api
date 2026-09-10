@@ -73,11 +73,20 @@ class HaAction : public Component {
   void add_data(const char *key, TemplatableValue<std::string> value) {
     this->data_.emplace_back(key, std::move(value));
   }
+  void add_data_template(const char *key, TemplatableValue<std::string> value) {
+    this->data_template_.emplace_back(key, std::move(value));
+  }
+  void add_variable(const char *key, TemplatableValue<std::string> value) {
+    this->variables_.emplace_back(key, std::move(value));
+  }
   void set_response_template(TemplatableValue<std::string> tmpl) {
     this->response_template_ = std::move(tmpl);
     this->has_template_ = true;
   }
   void set_update_interval(uint32_t ms) { this->update_interval_ms_ = ms; }
+  /// `update_interval: never` - the request runs only when something asks,
+  /// via the refresh button or another request's on_response.
+  void set_manual(bool manual) { this->manual_ = manual; }
   void set_retry_interval(uint32_t ms) { this->retry_ms_ = ms; }
   void set_timeout(uint32_t ms) { this->client_.set_deadline(ms); }
   void set_retain(bool retain) { this->retain_ = retain; }
@@ -115,6 +124,8 @@ class HaAction : public Component {
   const char *name_{""};
   const char *action_{nullptr};
   std::vector<std::pair<const char *, TemplatableValue<std::string>>> data_;
+  std::vector<std::pair<const char *, TemplatableValue<std::string>>> data_template_;
+  std::vector<std::pair<const char *, TemplatableValue<std::string>>> variables_;
   TemplatableValue<std::string> response_template_;
   std::vector<Target *> targets_;
   Trigger<JsonVariantConst> response_trigger_;
@@ -138,6 +149,7 @@ class HaAction : public Component {
   bool has_template_{false};
   bool retain_{false};
   bool have_response_{false};
+  bool manual_{false};
   bool due_{false};
 
   static constexpr uint32_t MAX_BACKOFF_MS = 600000;  // 10 min

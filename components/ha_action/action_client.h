@@ -68,9 +68,15 @@ struct ActionRequest {
   /// "weather.get_forecasts", "recorder.get_statistics", ...
   const char *action{nullptr};
   /// Sent as plain strings. Home Assistant's service schemas coerce with
-  /// `cv.ensure_list`, so a single value needs no list wrapper and no
-  /// `data_template`.
+  /// `cv.ensure_list`, so a single value needs no list wrapper.
   std::vector<std::pair<const char *, std::string>> data;
+  /// Rendered as Jinja by Home Assistant, then literal_eval'd - which is the
+  /// only way to pass anything that is not a string. `["a", "b"]` here arrives
+  /// as a real two-element list, where the same text in `data` would arrive as
+  /// one string and be wrapped into a one-element list by ensure_list.
+  std::vector<std::pair<const char *, std::string>> data_template;
+  /// Variables in scope for `data_template`.
+  std::vector<std::pair<const char *, std::string>> variables;
   /// Jinja that Home Assistant renders SERVER-SIDE before the reply crosses the
   /// wire. Empty means "send the raw response". Built at runtime by both
   /// callers, which is why this is a std::string and not a const char *.

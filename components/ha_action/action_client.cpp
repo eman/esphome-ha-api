@@ -68,12 +68,17 @@ bool ActionClient::send(const ActionRequest &req, const char *what, ReplyCb on_r
 
   api::HomeassistantActionRequest msg;
   msg.service = StringRef(req.action);
-  msg.data.init(req.data.size());
-  for (const auto &kv : req.data) {
-    auto &m = msg.data.emplace_back();
-    m.key = StringRef(kv.first);
-    m.value = StringRef(kv.second);
-  }
+  auto fill = [](auto &dest, const std::vector<std::pair<const char *, std::string>> &src) {
+    dest.init(src.size());
+    for (const auto &kv : src) {
+      auto &m = dest.emplace_back();
+      m.key = StringRef(kv.first);
+      m.value = StringRef(kv.second);
+    }
+  };
+  fill(msg.data, req.data);
+  fill(msg.data_template, req.data_template);
+  fill(msg.variables, req.variables);
   msg.call_id = call_id;
   msg.wants_response = true;
   if (!req.response_template.empty())

@@ -151,6 +151,27 @@ ending in `| tojson` over a boolean comes back as a *string* holding JSON. `ha_a
 that case for you; you should not have to care.
 </details>
 
+## Passing something that isn't a string
+
+Action data crosses the wire as strings, and Home Assistant's schemas usually coerce them —
+`cv.ensure_list` turns `"sensor.a"` into `["sensor.a"]`, so single values need no wrapper. Two
+names do not work that way:
+
+```yaml
+data:
+  statistic_ids: sensor.a,sensor.b      # WRONG - one id named "sensor.a,sensor.b"
+data_template:
+  statistic_ids: '{{ ["sensor.a", "sensor.b"] }}'   # a real two-element list
+```
+
+`data_template` values are rendered by Home Assistant and then literal-evaluated, so lists,
+numbers and booleans survive. It is also where server-side lookups belong:
+
+```yaml
+data_template:
+  config_entry: "{{ config_entry_id('sensor.my_integration_thing') }}"
+```
+
 ## Configuration
 
 ### `ha_action:`
@@ -162,8 +183,10 @@ A list of requests.
 | `action` | | the action to call, e.g. `weather.get_forecasts`. Exclusive with `template` |
 | `template` | | server-side Jinja, with a carrier action supplied for you. Exclusive with `action` |
 | `data` | `{}` | action data. Values may be lambdas. Home Assistant's schemas coerce single values to lists, so no list wrapper is needed |
+| `data_template` | `{}` | data whose values Home Assistant renders as Jinja and then literal-evals — the only way to pass something that is not a string (see below) |
+| `variables` | `{}` | variables in scope for `data_template` |
 | `response_template` | | Jinja that reshapes the response, rendered by Home Assistant |
-| `update_interval` | once per API connection | |
+| `update_interval` | once per API connection | a duration, or `never` for a request that runs only when asked — from a `button`, or another request's `on_response` |
 | `retry_interval` | `30s` | first retry after a failure; doubles to a 10 min cap |
 | `timeout` | `20s` | |
 | `retain` | `false` | keep the parsed response between refreshes, for lambdas that walk a whole array. Uses PSRAM where available |
