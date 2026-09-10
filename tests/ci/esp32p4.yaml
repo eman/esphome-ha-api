@@ -1,0 +1,73 @@
+# Compile-only fixture: builds the component for the ESP32-P4 so CI exercises
+# the RISC-V toolchain as well as Xtensa. That is not busywork - a `std::max(0,
+# y)` with an int32_t argument compiles on one and not the other, which is
+# exactly how the LVGL helpers' first portability bug was found.
+#
+# Not an example. The P4 has no radio of its own, so Wi-Fi comes from a
+# companion ESP32-C6 over SDIO; the pins below are a real board's (Guition
+# JC1060P470) purely so the config is valid. Do not copy this for your own
+# device - see examples/ instead.
+
+esphome:
+  name: ci-p4
+
+esp32:
+  variant: esp32p4
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+esp32_hosted:
+  variant: esp32c6
+  reset_pin: GPIO54
+  cmd_pin: GPIO19
+  clk_pin: GPIO18
+  d0_pin: GPIO14
+  d1_pin: GPIO15
+  d2_pin: GPIO16
+  d3_pin: GPIO17
+  active_high: true
+  sdio_frequency: 20MHz
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+
+external_components:
+  - source: github://eman/esphome-ha-history
+    components: [ha_history]
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+sensor:
+  # Every statistic the component supports, so all five code paths compile.
+  - platform: ha_history
+    id: h_mean
+    entity_id: sensor.power
+    history: { window: today, bucket: 5min, statistic: mean }
+    on_history_loaded:
+      - lambda: 'ESP_LOGI("ci", "%u", (unsigned) id(h_mean).history_size());'
+  - platform: ha_history
+    id: h_minmax
+    entity_id: sensor.temperature
+    history: { window: 24h, bucket: hour, statistic: max }
+  - platform: ha_history
+    id: h_change
+    entity_id: sensor.energy
+    history: { window: 3d, bucket: hour, statistic: change }
+
+button:
+  - platform: ha_history
+    name: Reload history
