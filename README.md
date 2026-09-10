@@ -21,13 +21,8 @@ external_components:
   - source: github://eman/esphome-ha-api
 ```
 
-No `components:` key. Both components auto-load a third, `ha_api_core`, which holds the request
-transport they share and has no configuration of its own — and a `components:` list stops
-anything it does not name from importing. If you would rather be explicit, name all three:
-`components: [ha_action, ha_history, ha_api_core]`.
-
-Only what you use is built. A config with just `ha_history` copies `ha_history` and
-`ha_api_core`; `ha_action` is not compiled at all.
+Leave out `components:`. These components depend on each other, and a `components:` list
+excludes anything it does not name.
 
 ## Requirements
 
