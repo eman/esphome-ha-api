@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="410" viewBox="0 0 1280 410">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151a24"/><stop offset="1" stop-color="#0E1013"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="410" fill="url(#bg)"/>
+
+  <text x="56" y="102" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="50" font-weight="600"
+        fill="#FFFFFF" letter-spacing="-0.5">Home Assistant Actions</text>
+  <text x="56" y="142" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#9AA4B2">
+    Call an action on a schedule; its response becomes entities on the device
+  </text>
+
+  <text x="56" y="180" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="12"
+        fill="#6E7889" letter-spacing="1.8">RESPONSE</text>
+  <text x="800" y="180" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="12"
+        fill="#6E7889" letter-spacing="1.8">ESPHOME ENTITIES</text>
+
+  <!-- Indentation is positioned rather than spaced: renderers collapse leading
+       whitespace in <text>, and the nesting is the whole point here. -->
+  <g font-family="Menlo, DejaVu Sans Mono, monospace" font-size="14" fill="#6E7889">
+    <text x="56" y="222">{</text>
+    <text x="72.9" y="246"><tspan fill="#9AA4B2">"weather.home"</tspan>: {</text>
+    <text x="89.7" y="270"><tspan fill="#9AA4B2">"forecast"</tspan>: [</text>
+    <text x="106.6" y="294">{ <tspan fill="#9AA4B2">"temperature"</tspan>: <tspan fill="#F2C230" font-weight="bold">18.2</tspan>,</text>
+    <text x="123.4" y="318"><tspan fill="#9AA4B2">"condition"</tspan>: <tspan fill="#C9D1DB">"cloudy"</tspan> },</text>
+    <text x="106.6" y="342">…</text>
+  </g>
+
+  <!-- The path selector bridges the two, and shows why the bracket form exists:
+       the outermost key is an entity id, dots and all. -->
+  <text x="620" y="272" text-anchor="middle" font-family="Menlo, DejaVu Sans Mono, monospace"
+        font-size="12.5" fill="#F2C230">["weather.home"].forecast[3].temperature</text>
+  <line x1="500" y1="294" x2="744" y2="294" stroke="#F2C230" stroke-width="1.75" stroke-opacity="0.85"/>
+  <path d="M752,294 L740,287.5 L740,300.5 Z" fill="#F2C230"/>
+
+  <rect x="800" y="196" width="424" height="52" rx="10" fill="#191C21" stroke="#2C313A"/>
+  <text x="820" y="228" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15"
+        fill="#9AA4B2">Temperature in 3 hours</text>
+  <text x="1204" y="229" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" font-weight="600" fill="#F2C230">18.2 °C</text>
+
+  <rect x="800" y="260" width="424" height="52" rx="10" fill="#191C21" stroke="#2C313A"/>
+  <text x="820" y="292" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15"
+        fill="#9AA4B2">Condition now</text>
+  <text x="1204" y="293" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" font-weight="600" fill="#FFFFFF">cloudy</text>
+
+  <rect x="800" y="324" width="424" height="52" rx="10" fill="#191C21" stroke="#2C313A"/>
+  <text x="820" y="356" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15"
+        fill="#9AA4B2">Rain in the next hour</text>
+  <circle cx="1198" cy="350" r="6" fill="#4E9FE0"/>
+  <text x="1180" y="357" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" font-weight="600" fill="#FFFFFF">ON</text>
+</svg>

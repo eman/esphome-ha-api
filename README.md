@@ -1,4 +1,7 @@
-# Home Assistant API components for ESPHome
+<p align="center">
+  <img src="docs/banner.png" width="900"
+       alt="Home Assistant API for ESPHome - more from the connection your device already has. Home Assistant and an ESPHome device joined by one connection carrying three streams: live states, which are built in; recorder history at boot, from ha_history; and action responses on a schedule, from ha_action. No token, no HTTP client.">
+</p>
 
 Home Assistant holds an encrypted connection to every adopted ESPHome device, and that
 connection can carry far more than live state pushes. These two components use it for the
@@ -11,8 +14,6 @@ return. Written `ha_action` in YAML.
 **[History](#history)** — sensors that arrive with their recent history already loaded,
 backfilled from recorder statistics at boot, so a time-series graph renders immediately. Written
 `ha_history` in YAML.
-
-Neither needs a credential or an HTTP client.
 
 ## Installing
 
@@ -43,6 +44,11 @@ History asks for two more:
 ---
 
 ## Actions
+
+<p align="center">
+  <img src="docs/banner-actions.png" width="900"
+       alt="Home Assistant Actions - call an action on a schedule; its response becomes entities on the device. A weather.get_forecasts response, keyed by the entity id weather.home, with one temperature value picked out by the path selector and arriving as three ESPHome entities.">
+</p>
 
 Say you want tomorrow's forecast on a panel. Home Assistant has it — `weather.get_forecasts`
 returns it — but ESPHome's built-in `homeassistant.action` is an *automation action*: you fire
@@ -233,7 +239,7 @@ Needs `retain: true`; without it the parsed document lives only for the duration
 ## History
 
 <p align="center">
-  <img src="docs/banner.png" width="900"
+  <img src="docs/banner-history.png" width="900"
        alt="Home Assistant History - ESPHome sensors that arrive with their history already loaded. A chart of a day's data is complete at boot; live values extend it from there.">
 </p>
 
@@ -358,7 +364,7 @@ lv_line_set_points(id(my_line), pts, n);
 See `examples/lvgl_sparkline.yaml`. Call both from `on_history_loaded` and `on_history_update`.
 ESPHome has no LVGL `chart` widget as of 2026.8, which is why these exist.
 
-### Behaviour worth knowing
+### Gotchas
 
 - **Backfilled buckets win** where a live bucket already exists. Home Assistant's statistics
   come from the full sample stream; the device's live bucket from whatever it happened to see.
