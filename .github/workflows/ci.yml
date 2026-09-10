@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    name: series.h host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tests test
+
+  compile:
+    name: esphome compile (${{ matrix.example }}, ${{ matrix.board }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [basic]
+        board: [esp32dev, esp32-p4-evboard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install esphome
+      - name: Point the example at this checkout
+        run: |
+          mkdir -p ci && cp examples/${{ matrix.example }}.yaml ci/
+          cat > ci/secrets.yaml <<'EOF'
+          wifi_ssid: ci
+          wifi_password: ci-password
+          api_encryption_key: "0w7oeRkbfwzt6XvJ6oDxSCXEqM3V6LaPNa4Y4ehmRCk="
+          EOF
+          python - <<'PY'
+          import pathlib, re
+          p = pathlib.Path("ci/${{ matrix.example }}.yaml")
+          s = p.read_text()
+          s = re.sub(r"source: github://emansl/esphome-ha-history",
+                     "source:\n      type: local\n      path: ../components", s)
+          s = re.sub(r"board: esp32dev", "board: ${{ matrix.board }}", s)
+          p.write_text(s)
+          PY
+      - run: esphome compile ci/${{ matrix.example }}.yaml

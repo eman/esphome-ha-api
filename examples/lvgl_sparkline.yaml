@@ -1,0 +1,118 @@
+# ha_history feeding LVGL: a filled sparkline on a canvas, and the same data on
+# a `line` widget. Board/display config is elided - drop in your own `display:`
+# and `lvgl: displays:`.
+#
+# The two helpers live in components/ha_history/lvgl_helpers.h and compile only
+# when an `lvgl:` block is present.
+
+esphome:
+  name: history-lvgl-demo
+  on_boot:
+    # Canvas draw buffers are not zeroed by LVGL; clear before first paint.
+    - priority: -100
+      then:
+        - lvgl.canvas.fill:
+            id: spark
+            color: 0x000000
+            opa: transp
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+psram:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+
+external_components:
+  - source: github://emansl/esphome-ha-history
+    components: [ha_history]
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# display: ...            <- your panel here
+# touchscreen: ...
+
+lvgl:
+  # displays: my_display
+  widgets:
+    - obj:
+        x: 20
+        y: 20
+        width: 260
+        height: 80
+        radius: 8
+        bg_color: 0x191C21
+        border_width: 1
+        border_color: 0x2C313A
+        pad_all: 0
+        scrollable: false
+        widgets:
+          # A transparent canvas is ARGB8888, which the sparkline painter needs.
+          - canvas:
+              id: spark
+              x: 1
+              y: 1
+              width: 258
+              height: 78
+              transparent: true
+          - label:
+              id: pv_now
+              x: 12
+              y: 8
+              text: "--"
+              text_color: 0xFFFFFF
+    - line:
+        id: pv_line
+        x: 20
+        y: 120
+        width: 260
+        height: 60
+        line_width: 2
+        line_color: 0xF2C230
+        line_rounded: true
+
+script:
+  - id: redraw
+    then:
+      - lambda: |-
+          using namespace esphome::ha_history;
+          // Canvas: filled area, zero-based axis (a power trace).
+          lvgl::sparkline(id(spark), id(pv_history), 0xF2C230);
+          // Line widget: point array sized for the buffer's capacity.
+          static lv_point_precise_t pts[320];
+          const size_t n = lvgl::line_points(id(pv_history), pts, 320, 260, 60);
+          if (n >= 2)
+            lv_line_set_points(id(pv_line), pts, (uint32_t) n);
+
+sensor:
+  - platform: ha_history
+    id: pv_history
+    entity_id: sensor.pv_power
+    history:
+      window: today
+      bucket: 5min
+      statistic: mean
+    on_value:
+      - lvgl.label.update:
+          id: pv_now
+          text: !lambda 'return str_sprintf("%.2f kW", x);'
+    on_history_loaded:
+      - script.execute: redraw
+    on_history_update:
+      - script.execute: redraw
+
+button:
+  - platform: ha_history
+    name: Reload history

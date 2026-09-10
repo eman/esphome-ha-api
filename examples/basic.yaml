@@ -1,0 +1,63 @@
+# The smallest useful ha_history config: one sensor, the last 24 hours in
+# 5-minute buckets, logging the buffer when it loads and each time a bucket
+# closes.
+#
+# Requirements on the Home Assistant side:
+#   * the device is adopted in the ESPHome integration, and "Allow the device
+#     to perform Home Assistant actions" is enabled in its options
+#   * the entity has a state_class (measurement / total / total_increasing),
+#     which is what gives it recorder statistics
+#   * Home Assistant 2025.x or newer (action responses)
+
+esphome:
+  name: history-demo
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+
+external_components:
+  - source: github://emansl/esphome-ha-history
+    components: [ha_history]
+
+# The panel's clock is Home Assistant's, so "today" and bucket boundaries agree
+# with HA's own statistics.
+time:
+  - platform: homeassistant
+    id: ha_time
+
+sensor:
+  - platform: ha_history
+    id: outside_temp
+    entity_id: sensor.outdoor_temperature
+    on_history_loaded:
+      - lambda: |-
+          ESP_LOGI("demo", "history: %u points, %.1f .. %.1f",
+                   (unsigned) id(outside_temp).history_size(),
+                   id(outside_temp).history_min(), id(outside_temp).history_max());
+    on_history_update:
+      - lambda: 'ESP_LOGI("demo", "bucket closed, %u points", (unsigned) id(outside_temp).history_size());'
+
+  # Energy meter: hourly change, today so far.
+  - platform: ha_history
+    id: grid_import
+    entity_id: sensor.grid_import_energy
+    history:
+      window: today
+      bucket: hour
+      statistic: change
+
+button:
+  - platform: ha_history
+    name: Reload history
