@@ -18,7 +18,7 @@ there is no seam between "history" and "now".
 
 ```yaml
 external_components:
-  - source: github://emansl/esphome-ha-history
+  - source: github://eman/esphome-ha-history
     components: [ha_history]
 
 time:

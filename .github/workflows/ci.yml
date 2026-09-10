@@ -43,7 +43,7 @@ jobs:
           import pathlib, re
           p = pathlib.Path("ci/${{ matrix.example }}.yaml")
           s = p.read_text()
-          s = re.sub(r"source: github://emansl/esphome-ha-history",
+          s = re.sub(r"source: github://eman/esphome-ha-history",
                      "source:\n      type: local\n      path: ../components", s)
           s = re.sub(r"board: esp32dev", "board: ${{ matrix.board }}", s)
           p.write_text(s)

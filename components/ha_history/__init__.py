@@ -11,7 +11,7 @@ import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_TIME_ID
 from esphome.core import TimePeriod
 
-CODEOWNERS = ["@emansl"]
+CODEOWNERS = ["@eman"]
 DEPENDENCIES = ["api", "time"]
 # api's own AUTO_LOAD only adds json when a YAML `homeassistant.action` sets
 # capture_response; we turn action responses on ourselves, so we add it.

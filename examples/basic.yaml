@@ -28,7 +28,7 @@ api:
 logger:
 
 external_components:
-  - source: github://emansl/esphome-ha-history
+  - source: github://eman/esphome-ha-history
     components: [ha_history]
 
 # The panel's clock is Home Assistant's, so "today" and bucket boundaries agree
