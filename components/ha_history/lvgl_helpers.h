@@ -11,7 +11,8 @@
 //   sparkline()    paints a filled-area trace straight into a transparent
 //                  ARGB8888 canvas's draw buffer
 //
-// Both map x over the sensor's window, so a `today` buffer occupies the
+// Both take the sensor by pointer, which is what `id(my_sensor)` yields, and
+// both map x over the sensor's window, so a `today` buffer occupies the
 // fraction of the width that the day has used up so far, and a rolling window
 // always fills it. Call from on_history_loaded and on_history_update.
 
@@ -44,9 +45,9 @@ inline float x_of(uint32_t start, uint32_t window_start, uint32_t window_s, int3
 /// y runs from `y_max` at the top to `y_min` at the bottom; pass NAN for either
 /// to take it from the data (with 0 always included, so a flat trace sits on
 /// the floor rather than mid-air).
-inline size_t line_points(const HaHistorySensor &s, lv_point_precise_t *pts, size_t cap, int32_t w, int32_t h,
+inline size_t line_points(const HaHistorySensor *s, lv_point_precise_t *pts, size_t cap, int32_t w, int32_t h,
                           float y_min = NAN, float y_max = NAN) {
-  const auto &buf = s.history();
+  const auto &buf = s->history();
   const size_t n = std::min(cap, buf.size());
   if (n == 0)
     return 0;
@@ -58,7 +59,7 @@ inline size_t line_points(const HaHistorySensor &s, lv_point_precise_t *pts, siz
   if (span < 1e-9f)
     span = 1.0f;
 
-  const uint32_t ws = s.window_start(), wl = s.window_seconds();
+  const uint32_t ws = s->window_start(), wl = s->window_seconds();
   for (size_t i = 0; i < n; i++) {
     const Point &p = buf.at(i);
     pts[i].x = detail::x_of(p.start, ws, wl, w);
@@ -73,7 +74,7 @@ inline size_t line_points(const HaHistorySensor &s, lv_point_precise_t *pts, siz
 /// microseconds a pixel and a 244x42 trace took half a second through it.
 /// `zero_based` pins the floor of the y axis at zero, which is what a power or
 /// energy trace wants; a temperature trace wants false.
-inline void sparkline(lv_obj_t *canvas, const HaHistorySensor &s, uint32_t rgb, uint8_t line_opa = 191,
+inline void sparkline(lv_obj_t *canvas, const HaHistorySensor *s, uint32_t rgb, uint8_t line_opa = 191,
                       uint8_t fill_top_opa = 77, uint8_t fill_bot_opa = 5, bool zero_based = true) {
   lv_draw_buf_t *db = lv_canvas_get_draw_buf(canvas);
   if (db == nullptr || db->data == nullptr || db->header.cf != LV_COLOR_FORMAT_ARGB8888)
@@ -83,7 +84,7 @@ inline void sparkline(lv_obj_t *canvas, const HaHistorySensor &s, uint32_t rgb, 
   const int32_t w = (int32_t) db->header.w, h = (int32_t) db->header.h;
   memset(px, 0, (size_t) stride * h * sizeof(uint32_t));
 
-  const auto &buf = s.history();
+  const auto &buf = s->history();
   const size_t n = buf.size();
   if (n < 2 || w < 2 || h < 2) {
     lv_obj_invalidate(canvas);
@@ -105,7 +106,7 @@ inline void sparkline(lv_obj_t *canvas, const HaHistorySensor &s, uint32_t rgb, 
     px[y * stride + x] = ((uint32_t) opa << 24) | (rgb & 0x00FFFFFFu);
   };
 
-  const uint32_t ws = s.window_start(), wl = s.window_seconds();
+  const uint32_t ws = s->window_start(), wl = s->window_seconds();
   // Walk columns; interpolate between the two buckets that straddle each one.
   size_t seg = 0;
   int32_t prev_y = -1;
@@ -119,12 +120,12 @@ inline void sparkline(lv_obj_t *canvas, const HaHistorySensor &s, uint32_t rgb, 
     const float f = xb > xa ? std::min(1.0f, std::max(0.0f, ((float) x - xa) / (xb - xa))) : 0.0f;
     const float v = buf.at(seg).value + (buf.at(seg + 1).value - buf.at(seg).value) * f;
     int32_t y = (int32_t) std::lround((1.0f - (v - lo) / span) * (float) (h - 1));
-    y = std::min(h - 1, std::max(0, y));
+    y = std::min<int32_t>(h - 1, std::max<int32_t>(0, y));
     const int32_t y0 = (int32_t) std::lround((1.0f - (0.0f - lo) / span) * (float) (h - 1));  // the zero line
-    const int32_t floor_y = zero_based ? std::min(h - 1, std::max(0, y0)) : h - 1;
+    const int32_t floor_y = zero_based ? std::min<int32_t>(h - 1, std::max<int32_t>(0, y0)) : h - 1;
 
     // Area fill from the trace to the floor, fading toward the floor.
-    const int32_t a = std::min(y, floor_y), b = std::max(y, floor_y);
+    const int32_t a = std::min<int32_t>(y, floor_y), b = std::max<int32_t>(y, floor_y);
     for (int32_t fy = a; fy <= b; fy++) {
       const float g = (b > a) ? (float) (fy - a) / (float) (b - a) : 0.0f;
       put(x, fy, (uint8_t) std::lround(fill_top_opa + (fill_bot_opa - fill_top_opa) * g));
@@ -132,7 +133,7 @@ inline void sparkline(lv_obj_t *canvas, const HaHistorySensor &s, uint32_t rgb, 
     // Stroke, bridging vertical jumps so a steep ramp stays continuous.
     put(x, y, line_opa);
     if (prev_y >= 0)
-      for (int32_t sy = std::min(prev_y, y); sy <= std::max(prev_y, y); sy++)
+      for (int32_t sy = std::min<int32_t>(prev_y, y); sy <= std::max<int32_t>(prev_y, y); sy++)
         put(x, sy, line_opa);
     prev_y = y;
   }
