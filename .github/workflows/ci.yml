@@ -29,10 +29,15 @@ jobs:
       - name: Point the example at this checkout
         run: |
           mkdir -p ci && cp examples/${{ matrix.example }}.yaml ci/
-          cat > ci/secrets.yaml <<'EOF'
+          # Throwaway credentials so `esphome compile` has something to
+          # validate. The API key is generated per run rather than hardcoded:
+          # a literal here would look exactly like a real key to anyone reading
+          # the file, and anyone who copied it would be giving a real device a
+          # publicly known one.
+          cat > ci/secrets.yaml <<EOF
           wifi_ssid: ci
           wifi_password: ci-password
-          api_encryption_key: "0w7oeRkbfwzt6XvJ6oDxSCXEqM3V6LaPNa4Y4ehmRCk="
+          api_encryption_key: "$(openssl rand -base64 32)"
           EOF
           python - <<'PY'
           import pathlib, re
