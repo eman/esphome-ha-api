@@ -1,4 +1,6 @@
 tests/test_series
+tests/test_path
+tests/vendor/
 /ci/
 __pycache__/
 *.pyc
