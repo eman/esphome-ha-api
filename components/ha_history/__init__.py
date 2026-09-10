@@ -6,6 +6,7 @@ change a default.
 """
 
 import esphome.codegen as cg
+from esphome.components import ha_action
 from esphome.components import time as time_
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_TIME_ID
@@ -13,9 +14,12 @@ from esphome.core import TimePeriod
 
 CODEOWNERS = ["@eman"]
 DEPENDENCIES = ["api", "time"]
-# api's own AUTO_LOAD only adds json when a YAML `homeassistant.action` sets
-# capture_response; we turn action responses on ourselves, so we add it.
-AUTO_LOAD = ["json"]
+# json: api's own AUTO_LOAD only adds it when a YAML `homeassistant.action`
+#   sets capture_response; we turn action responses on ourselves.
+# ha_action: carries the shared Home Assistant action transport
+#   (components/ha_action/action_client.h). Auto-loading it is what copies those
+#   sources into the build; it declares no requests of its own.
+AUTO_LOAD = ["json", "ha_action"]
 
 CONF_WINDOW = "window"
 CONF_BUCKET = "bucket"
@@ -68,10 +72,4 @@ async def to_code(config):
     cg.add(var.set_time(await cg.get_variable(config[CONF_TIME_ID])))
     cg.add(var.set_retry_interval(config[CONF_RETRY_INTERVAL]))
 
-    # The same defines a YAML `homeassistant.action` with capture_response sets
-    # (api/__init__.py): they enable the call_id / wants_response /
-    # response_template fields on the request and the response handler on the
-    # connection.
-    cg.add_define("USE_API_HOMEASSISTANT_SERVICES")
-    cg.add_define("USE_API_HOMEASSISTANT_ACTION_RESPONSES")
-    cg.add_define("USE_API_HOMEASSISTANT_ACTION_RESPONSES_JSON")
+    ha_action.require_action_responses()

@@ -44,7 +44,7 @@ jobs:
           import pathlib, re
           p = pathlib.Path("ci/device.yaml")
           p.write_text(re.sub(
-              r"source: github://eman/esphome-ha-history",
+              r"source: github://eman/esphome-ha-api",
               "source:\n      type: local\n      path: ../components",
               p.read_text()))
           PY

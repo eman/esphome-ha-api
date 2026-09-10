@@ -16,8 +16,7 @@ there is no seam between "history" and "now".
 
 ```yaml
 external_components:
-  - source: github://eman/esphome-ha-history
-    components: [ha_history]
+  - source: github://eman/esphome-ha-api
 
 time:
   - platform: homeassistant

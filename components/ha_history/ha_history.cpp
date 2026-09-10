@@ -12,6 +12,14 @@ namespace ha_history {
 
 static const char *const TAG = "ha_history";
 
+HaHistory::HaHistory() : client_(TAG) {}
+
+void HaHistory::setup() {
+  this->client_.set_on_api_change([this](bool connected, uint32_t outage_ms) {
+    this->on_api_change_(connected, outage_ms);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Clock
 // ---------------------------------------------------------------------------
@@ -52,6 +60,10 @@ void HaHistory::iso_utc_(uint32_t epoch, char *out, size_t len) {
 // ---------------------------------------------------------------------------
 
 void HaHistory::loop() {
+  // Unconditional: the client tracks the API connection and expires an
+  // in-flight request whether or not the clock has synced yet.
+  this->client_.loop();
+
   const uint32_t now = this->now_utc();
   if (now == 0) {
     // Nothing can be bucketed or requested without a clock. Say so, but not
@@ -115,79 +127,49 @@ void HaHistory::tick_buckets_(uint32_t now) {
 // Backfill
 // ---------------------------------------------------------------------------
 
-void HaHistory::tick_backfill_(uint32_t now_ms, uint32_t now) {
-  const bool connected = api::global_api_server != nullptr && api::global_api_server->is_connected();
+void HaHistory::on_api_change_(bool connected, uint32_t outage_ms) {
+  if (!connected)
+    return;  // the client has already failed anything in flight
 
-  if (connected != this->api_was_connected_) {
-    this->api_was_connected_ = connected;
-    this->probe_fail_since_ms_ = 0;
-    this->probe_warned_ = false;
-    ESP_LOGD(TAG, "API %s", connected ? "connected" : "disconnected");
-    if (!connected) {
-      this->disconnected_ms_ = now_ms;
-      if (this->pending_ != nullptr) {
-        // A connection that dies right after we asked is the signature of a
-        // reply that exceeded the API frame limit. Back off hard rather than
-        // re-asking the moment HA reconnects.
-        const bool right_after = now_ms - this->pending_->sent_ms < TOO_LARGE_WINDOW_MS;
-        this->fail_pending_(right_after ? "connection dropped right after the request" : "connection lost",
-                            right_after);
-      }
-    } else {
-      // New connection: attempt counters are per connection. A sensor that gave
-      // up gets another go, and a gap longer than a bucket is repaired by
-      // simply loading again - backfilled buckets win where both exist.
-      const uint32_t outage_ms = this->disconnected_ms_ ? now_ms - this->disconnected_ms_ : 0;
-      for (auto *s : this->sensors_) {
-        s->attempts_ = 0;
-        s->timeouts_ = 0;
-        s->backoff_ms_ = 0;
-        s->next_try_ms_ = now_ms;
-        if (s->load_state_ == LoadState::GIVEN_UP)
-          s->load_state_ = LoadState::IDLE;
-        if (s->load_state_ == LoadState::LOADED && outage_ms > s->bucket_s_ * 1000UL) {
-          ESP_LOGD(TAG, "'%s': API was down %us, reloading history", s->entity_id_, (unsigned) (outage_ms / 1000));
-          s->load_state_ = LoadState::IDLE;
-        }
-      }
+  // Attempt counters are per connection. A sensor that gave up gets another go,
+  // and a gap longer than a bucket is repaired by simply loading again -
+  // backfilled buckets win where both exist.
+  const uint32_t now_ms = millis();
+  for (auto *s : this->sensors_) {
+    s->attempts_ = 0;
+    s->timeouts_ = 0;
+    s->backoff_ms_ = 0;
+    s->next_try_ms_ = now_ms;
+    if (s->load_state_ == LoadState::GIVEN_UP)
+      s->load_state_ = LoadState::IDLE;
+    if (s->load_state_ == LoadState::LOADED && outage_ms > s->bucket_s_ * 1000UL) {
+      ESP_LOGD(TAG, "'%s': API was down %us, reloading history", s->entity_id_, (unsigned) (outage_ms / 1000));
+      s->load_state_ = LoadState::IDLE;
     }
   }
-  if (!connected)
-    return;
+}
 
-  if (this->pending_ != nullptr) {
-    if (now_ms - this->pending_->sent_ms > DEADLINE_MS)
-      this->fail_pending_("no reply", false);
-    else
-      return;  // one request in flight at a time
-  }
+void HaHistory::tick_backfill_(uint32_t now_ms, uint32_t now) {
+  // One request in flight at a time: it bounds the transient JsonDocument and
+  // the receive frame to a single payload.
+  if (!this->client_.connected() || this->client_.busy())
+    return;
 
   for (auto *s : this->sensors_) {
     if (s->load_state_ == LoadState::IDLE) {
       if ((int32_t) (now_ms - s->next_try_ms_) < 0)
         continue;
-      if (!this->try_send_(s, now, false)) {
-        // Home Assistant has not subscribed to actions on this connection yet.
-        // It does so within a second or two of authenticating; much longer than
-        // that and something is wrong, so say so once.
+      // A false send means Home Assistant has not subscribed to actions on this
+      // connection yet - it does so within a second or two of authenticating.
+      // Nothing was sent and nothing registered, so just come back shortly; the
+      // client warns on its own if the wait becomes unreasonable.
+      if (!this->try_send_(s, now, false))
         s->next_try_ms_ = now_ms + 1000;
-        if (this->probe_fail_since_ms_ == 0) {
-          this->probe_fail_since_ms_ = now_ms;
-        } else if (!this->probe_warned_ && now_ms - this->probe_fail_since_ms_ > 10000) {
-          this->probe_warned_ = true;
-          ESP_LOGW(TAG, "no connected API client has subscribed to Home Assistant actions for %us; "
-                        "history cannot be requested until one does",
-                   (unsigned) ((now_ms - this->probe_fail_since_ms_) / 1000));
-        }
-      } else {
-        this->probe_fail_since_ms_ = 0;
-      }
       return;
     }
     if (s->load_state_ == LoadState::LOADED && !s->seam_done_ && now_ms - s->loaded_ms_ >= SEAM_DELAY_MS) {
-      if (this->try_send_(s, now, true))
-        return;
-      s->loaded_ms_ = now_ms;  // not subscribed yet; ask again in a while
+      if (!this->try_send_(s, now, true))
+        s->loaded_ms_ = now_ms;  // not subscribed yet; ask again in a while
       return;
     }
   }
@@ -221,77 +203,42 @@ bool HaHistory::try_send_(HaHistorySensor *s, uint32_t now, bool seam) {
   iso_utc_(anchor, start_iso, sizeof(start_iso));
   iso_utc_(now, end_iso, sizeof(end_iso));
 
-  // Backing strings must outlive send_homeassistant_action(); the request holds
-  // StringRefs into them. Plain strings throughout: recorder.get_statistics
-  // wraps `statistic_ids` and `types` with ensure_list itself.
-  const std::string service = "recorder.get_statistics";
-  const std::string k_start = "start_time", k_end = "end_time", k_period = "period", k_types = "types",
-                    k_ids = "statistic_ids";
-  const std::string v_start = start_iso, v_end = end_iso, v_period = s->bucket_s_ == 3600 ? "hour" : "5minute",
-                    v_types = to_string(s->statistic_), v_ids = s->entity_id_;
-  const std::string tmpl = this->build_template_(s, anchor);
-
-  api::HomeassistantActionRequest req;
-  req.service = StringRef(service);
-  req.data.init(5);
-  const std::string *kv[5][2] = {
-      {&k_start, &v_start}, {&k_end, &v_end}, {&k_period, &v_period}, {&k_types, &v_types}, {&k_ids, &v_ids},
+  // Plain strings throughout: recorder.get_statistics wraps `statistic_ids` and
+  // `types` with ensure_list itself, so no data_template is needed. The request
+  // outlives the send() call, which is what the StringRefs in it require.
+  const char *period = s->bucket_s_ == 3600 ? "hour" : "5minute";
+  ha_action::ActionRequest req;
+  req.action = "recorder.get_statistics";
+  req.data = {
+      {"start_time", start_iso},   {"end_time", end_iso},          {"period", period},
+      {"types", to_string(s->statistic_)}, {"statistic_ids", s->entity_id_},
   };
-  for (auto &pair : kv) {
-    auto &m = req.data.emplace_back();
-    m.key = StringRef(*pair[0]);
-    m.value = StringRef(*pair[1]);
-  }
-  const uint32_t call_id = this->call_id_next_++;
-  req.call_id = call_id;
-  req.wants_response = true;
-  req.response_template = StringRef(tmpl);
+  req.response_template = this->build_template_(s, anchor);
 
-  // One client, and only one that has subscribed to actions. `false` from every
-  // client means HA has not subscribed yet on this connection - nothing was
-  // sent, so nothing is registered and nothing can leak.
-  bool sent = false;
-  unsigned clients = 0;
-  for (auto &client : api::global_api_server->active_clients()) {
-    clients++;
-    if (client->send_homeassistant_action(req)) {
-      sent = true;
-      break;
-    }
-  }
-  if (!sent) {
-    ESP_LOGV(TAG, "'%s': %u API client(s), none subscribed to actions yet", s->entity_id_, clients);
+  const uint32_t bucket_s = s->bucket_s_;
+  const bool sent = this->client_.send(
+      req, s->entity_id_,
+      [this, s, anchor, bucket_s, seam](const api::ActionResponse &r) {
+        this->handle_response_(s, anchor, bucket_s, seam, r);
+      },
+      [this, s, seam](ha_action::FailReason reason) { this->fail_request_(s, seam, reason); });
+  if (!sent)
     return false;
-  }
-
-  auto p = std::make_shared<Pending>(Pending{s, call_id, millis(), anchor, s->bucket_s_, seam});
-  this->pending_ = p;
-  std::weak_ptr<Pending> weak = p;
-  api::global_api_server->register_action_response_callback(call_id, [this, weak](const api::ActionResponse &r) {
-    auto sp = weak.lock();
-    if (sp == nullptr)
-      return;  // expired or superseded; HA's late reply is ignored
-    this->handle_response_(sp, r);
-  });
 
   s->load_state_ = LoadState::PENDING;
   s->attempts_++;
-  ESP_LOGD(TAG, "'%s': requesting %s statistics from %s (%s)%s", s->entity_id_, v_period.c_str(), start_iso,
+  ESP_LOGD(TAG, "'%s': requesting %s statistics from %s (%s)%s", s->entity_id_, period, start_iso,
            to_string(s->statistic_), seam ? " [seam repair]" : "");
   return true;
 }
 
-void HaHistory::handle_response_(const std::shared_ptr<Pending> &p, const api::ActionResponse &r) {
-  if (this->pending_ != p)
-    return;
-  this->pending_.reset();
-  auto *s = p->sensor;
-
+void HaHistory::handle_response_(HaHistorySensor *s, uint32_t anchor, uint32_t bucket_s, bool seam,
+                                 const api::ActionResponse &r) {
   if (!r.is_success()) {
     // HA reached the service and it failed: a missing recorder, a template
     // error, a validation error. Real information, so say it verbatim.
     ESP_LOGW(TAG, "'%s': Home Assistant returned an error: %s", s->entity_id_, r.get_error_message().c_str());
-    this->fail_after_error_(s, p->seam);
+    this->fail_after_error_(s, seam);
     return;
   }
 
@@ -316,7 +263,7 @@ void HaHistory::handle_response_(const std::shared_ptr<Pending> &p, const api::A
       idx = e.as<long>();
       have_idx = true;
     } else {
-      if (put_indexed(s->buffer_, p->anchor, p->bucket_s, idx, e.as<float>()))
+      if (put_indexed(s->buffer_, anchor, bucket_s, idx, e.as<float>()))
         n++;
       have_idx = false;
     }
@@ -327,17 +274,17 @@ void HaHistory::handle_response_(const std::shared_ptr<Pending> &p, const api::A
   s->timeouts_ = 0;
   s->backoff_ms_ = 0;
   s->last_loaded_points_ = n;
-  if (p->seam) {
+  if (seam) {
     s->seam_done_ = true;
   } else {
     s->loaded_ms_ = millis();
   }
-  if (n == 0 && !p->seam) {
+  if (n == 0 && !seam) {
     ESP_LOGW(TAG, "'%s': Home Assistant has no statistics for this entity in the window. "
                   "Statistics need a state_class (measurement, total or total_increasing).",
              s->entity_id_);
   } else {
-    ESP_LOGI(TAG, "'%s': loaded %u points%s, %u held", s->entity_id_, (unsigned) n, p->seam ? " (seam repair)" : "",
+    ESP_LOGI(TAG, "'%s': loaded %u points%s, %u held", s->entity_id_, (unsigned) n, seam ? " (seam repair)" : "",
              (unsigned) s->buffer_.size());
   }
   s->loaded_trigger_.trigger();
@@ -354,14 +301,10 @@ void HaHistory::fail_after_error_(HaHistorySensor *s, bool seam) {
   s->load_state_ = s->attempts_ >= MAX_ATTEMPTS ? LoadState::GIVEN_UP : LoadState::IDLE;
 }
 
-void HaHistory::fail_pending_(const char *why, bool too_large) {
-  auto p = this->pending_;
-  this->pending_.reset();
-  if (p == nullptr)
-    return;
-  auto *s = p->sensor;
+void HaHistory::fail_request_(HaHistorySensor *s, bool seam, ha_action::FailReason reason) {
+  const char *why = ha_action::to_string(reason);
 
-  if (p->seam) {
+  if (seam) {
     // The seam repair is a nicety; do not fight for it.
     ESP_LOGD(TAG, "'%s': seam repair skipped (%s)", s->entity_id_, why);
     s->seam_done_ = true;
@@ -369,17 +312,19 @@ void HaHistory::fail_pending_(const char *why, bool too_large) {
     return;
   }
 
-  s->timeouts_++;
-  if (too_large) {
+  if (reason == ha_action::FailReason::TOO_LARGE) {
     s->backoff_ms_ = MAX_BACKOFF_MS;
     ESP_LOGW(TAG, "'%s': %s. If this repeats, the statistics reply is probably exceeding the API frame limit - "
                   "use a shorter window or bucket: hour. Backing off %us.",
              s->entity_id_, why, (unsigned) (MAX_BACKOFF_MS / 1000));
   } else {
     s->backoff_ms_ = s->backoff_ms_ == 0 ? this->retry_ms_ : std::min(s->backoff_ms_ * 2, MAX_BACKOFF_MS);
+    // Only silence counts toward this diagnostic. A dropped connection explains
+    // itself; Home Assistant sending NOTHING - no error, no response - is the
+    // one failure mode with no other symptom.
+    if (reason == ha_action::FailReason::TIMEOUT)
+      s->timeouts_++;
     if (s->timeouts_ >= 2) {
-      // Home Assistant sends NOTHING when actions are disallowed for a device -
-      // no error, no response - so silence is the only symptom there is.
       ESP_LOGW(TAG, "'%s': %s from Home Assistant (%u in a row). Is 'Allow the device to perform Home Assistant "
                     "actions' enabled for this device in the ESPHome integration's options? Retrying in %us.",
                s->entity_id_, why, (unsigned) s->timeouts_, (unsigned) (s->backoff_ms_ / 1000));
@@ -399,7 +344,7 @@ void HaHistory::fail_pending_(const char *why, bool too_large) {
 
 void HaHistory::request_backfill() {
   ESP_LOGI(TAG, "reloading history for %u sensor(s)", (unsigned) this->sensors_.size());
-  this->pending_.reset();  // any in-flight reply becomes a stale weak_ptr
+  this->client_.cancel();  // any in-flight reply becomes a stale weak_ptr
   for (auto *s : this->sensors_) {
     s->load_state_ = LoadState::IDLE;
     s->attempts_ = 0;
