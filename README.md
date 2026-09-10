@@ -1,9 +1,7 @@
 <p align="center">
   <img src="docs/banner.png" width="900"
-       alt="ha_history - Home Assistant sensors for ESPHome that arrive with their history already loaded. A day of five-minute means is already on screen at boot; live values extend it from there.">
+       alt="Home Assistant History - ESPHome sensors that arrive with their history already loaded. A chart of a day's data is complete at boot; live values extend it from there.">
 </p>
-
-# ha_history
 
 ESPHome's built-in `homeassistant` sensor gives a device live values pushed over the native
 API — but only from the moment it connects. A panel drawing a time-series graph boots to an
