@@ -1,13 +1,19 @@
 #pragma once
 
-// The Home Assistant action transport, shared by `ha_action` and `ha_history`.
+// The Home Assistant action transport.
+//
+// This component has no YAML surface of its own. It exists so that `ha_action`
+// and `ha_history` can share one implementation of the wire without either
+// depending on the other: ESPHome copies whole component directories, so a
+// shared file living inside one of them would drag that component's entire
+// implementation into every build of the other.
 //
 // Home Assistant already holds an encrypted native-API connection to every
 // adopted device, and that connection can carry an action call with a response.
 // ESPHome exposes it as the `homeassistant.action` automation action, which is
 // fine for a fire-and-forget call from a button press but has four properties
 // that make it unusable for scheduled, unattended use. This class exists to fix
-// all four, once, for both components:
+// all four, once, for whatever sits on top:
 //
 //  * `HomeAssistantServiceCallAction::play()` registers its response callback
 //    BEFORE sending, and `APIServer::send_homeassistant_action()` returns void.
@@ -57,7 +63,7 @@
 #endif
 
 namespace esphome {
-namespace ha_action {
+namespace ha_api_core {
 
 /// One outgoing action call.
 ///
@@ -171,7 +177,7 @@ class ActionClient {
   static uint32_t call_id_next_;
 };
 
-}  // namespace ha_action
+}  // namespace ha_api_core
 }  // namespace esphome
 
 #endif  // USE_API

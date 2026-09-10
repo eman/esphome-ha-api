@@ -207,7 +207,7 @@ bool HaHistory::try_send_(HaHistorySensor *s, uint32_t now, bool seam) {
   // `types` with ensure_list itself, so no data_template is needed. The request
   // outlives the send() call, which is what the StringRefs in it require.
   const char *period = s->bucket_s_ == 3600 ? "hour" : "5minute";
-  ha_action::ActionRequest req;
+  ha_api_core::ActionRequest req;
   req.action = "recorder.get_statistics";
   req.data = {
       {"start_time", start_iso},   {"end_time", end_iso},          {"period", period},
@@ -221,7 +221,7 @@ bool HaHistory::try_send_(HaHistorySensor *s, uint32_t now, bool seam) {
       [this, s, anchor, bucket_s, seam](const api::ActionResponse &r) {
         this->handle_response_(s, anchor, bucket_s, seam, r);
       },
-      [this, s, seam](ha_action::FailReason reason) { this->fail_request_(s, seam, reason); });
+      [this, s, seam](ha_api_core::FailReason reason) { this->fail_request_(s, seam, reason); });
   if (!sent)
     return false;
 
@@ -301,8 +301,8 @@ void HaHistory::fail_after_error_(HaHistorySensor *s, bool seam) {
   s->load_state_ = s->attempts_ >= MAX_ATTEMPTS ? LoadState::GIVEN_UP : LoadState::IDLE;
 }
 
-void HaHistory::fail_request_(HaHistorySensor *s, bool seam, ha_action::FailReason reason) {
-  const char *why = ha_action::to_string(reason);
+void HaHistory::fail_request_(HaHistorySensor *s, bool seam, ha_api_core::FailReason reason) {
+  const char *why = ha_api_core::to_string(reason);
 
   if (seam) {
     // The seam repair is a nicety; do not fight for it.
@@ -312,7 +312,7 @@ void HaHistory::fail_request_(HaHistorySensor *s, bool seam, ha_action::FailReas
     return;
   }
 
-  if (reason == ha_action::FailReason::TOO_LARGE) {
+  if (reason == ha_api_core::FailReason::TOO_LARGE) {
     s->backoff_ms_ = MAX_BACKOFF_MS;
     ESP_LOGW(TAG, "'%s': %s. If this repeats, the statistics reply is probably exceeding the API frame limit - "
                   "use a shorter window or bucket: hour. Backing off %us.",
@@ -322,7 +322,7 @@ void HaHistory::fail_request_(HaHistorySensor *s, bool seam, ha_action::FailReas
     // Only silence counts toward this diagnostic. A dropped connection explains
     // itself; Home Assistant sending NOTHING - no error, no response - is the
     // one failure mode with no other symptom.
-    if (reason == ha_action::FailReason::TIMEOUT)
+    if (reason == ha_api_core::FailReason::TIMEOUT)
       s->timeouts_++;
     if (s->timeouts_ >= 2) {
       ESP_LOGW(TAG, "'%s': %s from Home Assistant (%u in a row). Is 'Allow the device to perform Home Assistant "

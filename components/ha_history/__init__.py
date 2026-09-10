@@ -6,7 +6,6 @@ change a default.
 """
 
 import esphome.codegen as cg
-from esphome.components import ha_action
 from esphome.components import time as time_
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_TIME_ID
@@ -14,12 +13,9 @@ from esphome.core import TimePeriod
 
 CODEOWNERS = ["@eman"]
 DEPENDENCIES = ["api", "time"]
-# json: api's own AUTO_LOAD only adds it when a YAML `homeassistant.action`
-#   sets capture_response; we turn action responses on ourselves.
-# ha_action: carries the shared Home Assistant action transport
-#   (components/ha_action/action_client.h). Auto-loading it is what copies those
-#   sources into the build; it declares no requests of its own.
-AUTO_LOAD = ["json", "ha_action"]
+# ha_api_core carries the Home Assistant action transport the backfill rides on,
+# and sets the API defines it needs. It has no YAML surface of its own.
+AUTO_LOAD = ["ha_api_core", "json"]
 
 CONF_WINDOW = "window"
 CONF_BUCKET = "bucket"
@@ -71,5 +67,3 @@ async def to_code(config):
     await cg.register_component(var, config)
     cg.add(var.set_time(await cg.get_variable(config[CONF_TIME_ID])))
     cg.add(var.set_retry_interval(config[CONF_RETRY_INTERVAL]))
-
-    ha_action.require_action_responses()

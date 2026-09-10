@@ -7,11 +7,11 @@
 // the device: the hub sends a `recorder.get_statistics` action with a
 // `response_template`, Home Assistant renders that Jinja server-side into a
 // compact list of (bucket index, value) pairs, and the reply arrives through
-// the shared ha_action::ActionClient. No HTTP client, no TLS, no long-lived
+// the shared ha_api_core::ActionClient. No HTTP client, no TLS, no long-lived
 // token.
 //
 // The wire mechanics - the boot race, request expiry, the frame-size guard,
-// call_id allocation - live in ha_action/action_client.h, which documents why
+// call_id allocation - live in ha_api_core/action_client.h, which documents why
 // each one is needed. What stays here is the part specific to history: which
 // sensor to ask about next, and how hard to retry when Home Assistant says
 // nothing at all.
@@ -24,7 +24,7 @@
 #ifdef USE_BUTTON
 #include "esphome/components/button/button.h"
 #endif
-#include "esphome/components/ha_action/action_client.h"
+#include "esphome/components/ha_api_core/action_client.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
 
@@ -60,13 +60,13 @@ class HaHistory : public Component {
   bool try_send_(HaHistorySensor *s, uint32_t now, bool seam);
   void handle_response_(HaHistorySensor *s, uint32_t anchor, uint32_t bucket_s, bool seam,
                         const api::ActionResponse &r);
-  void fail_request_(HaHistorySensor *s, bool seam, ha_action::FailReason reason);
+  void fail_request_(HaHistorySensor *s, bool seam, ha_api_core::FailReason reason);
   void fail_after_error_(HaHistorySensor *s, bool seam);
   uint32_t window_start_for_(const HaHistorySensor *s, uint32_t now) const;
   std::string build_template_(const HaHistorySensor *s, uint32_t anchor) const;
   static void iso_utc_(uint32_t epoch, char *out, size_t len);
 
-  ha_action::ActionClient client_;
+  ha_api_core::ActionClient client_;
   time::RealTimeClock *time_{nullptr};
   std::vector<HaHistorySensor *> sensors_;
   uint32_t retry_ms_{30000};

@@ -69,7 +69,7 @@ bool HaAction::try_send_() {
   // Everything the request refers to must outlive the send, because the
   // protobuf message holds StringRefs into it. Evaluating the templates into
   // `req` and sending from the same scope is what guarantees that.
-  ActionRequest req;
+  ha_api_core::ActionRequest req;
   req.action = this->action_;
   auto evaluate = [](auto &dest, auto &src) {
     dest.reserve(src.size());
@@ -84,7 +84,7 @@ bool HaAction::try_send_() {
 
   const bool sent = this->client_.send(
       req, this->name_, [this](const api::ActionResponse &r) { this->handle_reply_(r); },
-      [this](FailReason reason) { this->fail_(reason); });
+      [this](ha_api_core::FailReason reason) { this->fail_(reason); });
   if (!sent)
     return false;
 
@@ -153,10 +153,10 @@ void HaAction::handle_reply_(const api::ActionResponse &r) {
            this->targets_.size() == 1 ? "y" : "ies");
 }
 
-void HaAction::fail_(FailReason reason) {
-  const char *why = to_string(reason);
+void HaAction::fail_(ha_api_core::FailReason reason) {
+  const char *why = ha_api_core::to_string(reason);
 
-  if (reason == FailReason::TOO_LARGE) {
+  if (reason == ha_api_core::FailReason::TOO_LARGE) {
     this->backoff_ms_ = MAX_BACKOFF_MS;
     ESP_LOGW(TAG, "'%s': %s. If this repeats, the reply is probably exceeding the 32 KiB API frame - "
                   "narrow it with a response_template. Backing off %us.",
@@ -170,7 +170,7 @@ void HaAction::fail_(FailReason reason) {
   // itself; Home Assistant sending NOTHING - no error, no response - when
   // actions are disallowed for a device is the one failure mode with no other
   // symptom.
-  if (reason == FailReason::TIMEOUT)
+  if (reason == ha_api_core::FailReason::TIMEOUT)
     this->timeouts_++;
   this->schedule_retry_(why);
 }

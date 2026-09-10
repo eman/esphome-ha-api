@@ -6,7 +6,7 @@
 #include "esphome/core/log.h"
 
 namespace esphome {
-namespace ha_action {
+namespace ha_api_core {
 
 // Non-zero, and far from the counters the built-in homeassistant.action uses -
 // those are function-local statics per template instantiation, starting at 1.
@@ -149,7 +149,7 @@ void ActionClient::fail_pending_(FailReason reason) {
 
 void ActionClient::cancel() { this->pending_.reset(); }
 
-}  // namespace ha_action
+}  // namespace ha_api_core
 }  // namespace esphome
 
 #endif  // USE_API

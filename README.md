@@ -21,9 +21,13 @@ external_components:
   - source: github://eman/esphome-ha-api
 ```
 
-No `components:` key. The two share their request transport, so a list naming only one of them
-stops the other from importing. If you would rather be explicit, name both:
-`components: [ha_action, ha_history]`.
+No `components:` key. Both components auto-load a third, `ha_api_core`, which holds the request
+transport they share and has no configuration of its own — and a `components:` list stops
+anything it does not name from importing. If you would rather be explicit, name all three:
+`components: [ha_action, ha_history, ha_api_core]`.
+
+Only what you use is built. A config with just `ha_history` copies `ha_history` and
+`ha_api_core`; `ha_action` is not compiled at all.
 
 ## Requirements
 
@@ -378,9 +382,13 @@ ESPHome has no LVGL `chart` widget as of 2026.8, which is why these exist.
 
 ## How requests are made
 
-Both components share `components/ha_action/action_client.h`. It exists because ESPHome's
-built-in `homeassistant.action` has four properties that are fine for a button press and not for
-scheduled, unattended use:
+Both components sit on `ha_api_core`, a third component that holds
+`action_client.{h,cpp}` and nothing else. It is separate because ESPHome copies whole component
+directories: a shared file living inside `ha_action` would drag that component's entire
+implementation into every `ha_history` build, and vice versa.
+
+It exists at all because ESPHome's built-in `homeassistant.action` has four properties that are
+fine for a button press and not for scheduled, unattended use:
 
 - It registers its response callback **before** sending, and the server-side send returns
   `void`. Home Assistant subscribes to actions shortly *after* authenticating, so a call fired
@@ -402,6 +410,14 @@ stops until the API reconnects or a refresh button is pressed. Live state pushes
 throughout — the subscription is independent of all of this.
 
 ## Development
+
+Three components:
+
+| | |
+|---|---|
+| `ha_action` | requests, scheduling, and the entity platforms |
+| `ha_history` | bucketing, the backfill, and the LVGL helpers |
+| `ha_api_core` | the request transport both sit on; no YAML surface |
 
 `components/ha_history/series.h` (buffer and bucket arithmetic) and `components/ha_action/path.h`
 (the path walker) are plain C++17 with no ESPHome dependency, and the path grammar is plain

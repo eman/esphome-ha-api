@@ -15,7 +15,7 @@
 // bind pieces of the response to entities with `path:`.
 //
 // Everything about the wire - the boot race, expiry, the frame guard, call_id
-// allocation - is in action_client.h.
+// allocation - is in ha_api_core/action_client.h.
 
 #include "esphome/core/defines.h"
 
@@ -31,7 +31,7 @@
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 
-#include "action_client.h"
+#include "esphome/components/ha_api_core/action_client.h"
 #include "path.h"
 
 namespace esphome {
@@ -110,7 +110,7 @@ class HaAction : public Component {
  protected:
   bool try_send_();
   void handle_reply_(const api::ActionResponse &r);
-  void fail_(FailReason reason);
+  void fail_(ha_api_core::FailReason reason);
   /// Home Assistant reached the action and it failed - a different thing
   /// from the transport failing, and not evidence that actions are blocked.
   void fail_after_error_();
@@ -120,7 +120,7 @@ class HaAction : public Component {
   /// whether or not a response_template was used.
   JsonVariantConst unwrap_(JsonObjectConst root, JsonDocument &scratch) const;
 
-  ActionClient client_;
+  ha_api_core::ActionClient client_;
   const char *name_{""};
   const char *action_{nullptr};
   std::vector<std::pair<const char *, TemplatableValue<std::string>>> data_;
