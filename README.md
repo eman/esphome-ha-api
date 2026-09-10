@@ -1,43 +1,61 @@
-# esphome-ha-api
+# Home Assistant API components for ESPHome
 
-Two ESPHome components that get more out of the Home Assistant connection your device
-already has.
+Home Assistant holds an encrypted connection to every adopted ESPHome device, and that
+connection can carry far more than live state pushes. These two components use it for the
+things people usually reach for a Home Assistant automation or an HTTP client to do.
 
-Home Assistant holds an encrypted native-API connection to every adopted ESPHome device, and
-that connection can carry far more than live state pushes. These components use it for the two
-things people usually reach for a Home Assistant automation or an HTTP client to do:
+**[Actions](#actions)** — call a Home Assistant action on a schedule and bind fields of its
+response to ESPHome entities: a weather forecast, a tariff curve, anything an integration will
+return. Written `ha_action` in YAML.
 
-| | |
-|---|---|
-| **[`ha_action`](#ha_action)** | Call a Home Assistant action on a schedule and bind fields of its response to ESPHome entities — a weather forecast, a tariff curve, anything an integration will return. |
-| **[`ha_history`](#ha_history)** | Sensors that arrive with their recent history already loaded, backfilled from recorder statistics at boot, so a time-series graph renders immediately. |
+**[History](#history)** — sensors that arrive with their recent history already loaded,
+backfilled from recorder statistics at boot, so a time-series graph renders immediately. Written
+`ha_history` in YAML.
+
+Neither needs a credential or an HTTP client.
+
+## Installing
 
 ```yaml
 external_components:
   - source: github://eman/esphome-ha-api
 ```
 
-No `components:` key. The two share their request transport, and a list naming only one of them
-stops the other from importing; omitting it is correct here. If you would rather be explicit,
-name both: `components: [ha_action, ha_history]`.
+No `components:` key. The two share their request transport, so a list naming only one of them
+stops the other from importing. If you would rather be explicit, name both:
+`components: [ha_action, ha_history]`.
 
-Neither needs a credential or an HTTP client. Both ride the connection Home Assistant already
-holds to the device.
+## Requirements
+
+- **Home Assistant 2025.x or newer**, for action responses in the ESPHome integration. Older
+  versions silently never reply.
+- The device adopted in the ESPHome integration, with **"Allow the device to perform Home
+  Assistant actions"** enabled in the device's options. It defaults to off, and when it is off
+  Home Assistant sends *nothing back* — no error — so the only symptom is a timeout. Both
+  components name this option in their warning after two of them.
+- **An ESP32.** The ESP8266's 8 KiB API frame and 40 KB heap are not enough.
+
+History asks for two more:
+
+- Entities with a **`state_class`** (`measurement`, `total` or `total_increasing`). That is what
+  gives an entity statistics. Text sensors, binary sensors and plain sensors have none, and
+  their raw history is far too large to pull onto a microcontroller — one power sensor measured
+  577 KB for a day, where its statistics were 26 KB.
+- `time: platform: homeassistant`, or another time source in the same timezone, so `today` and
+  the bucket boundaries agree with Home Assistant's.
 
 ---
 
-# `ha_action`
-
-<a name="ha_action"></a>
+## Actions
 
 Say you want tomorrow's forecast on a panel. Home Assistant has it — `weather.get_forecasts`
 returns it — but ESPHome's built-in `homeassistant.action` is an *automation action*: you fire
-it yourself, it stores nothing, and the `JsonDocument` it hands your lambda dies when the lambda
+it yourself, it stores nothing, and the JSON document it hands your lambda dies when the lambda
 returns. So the usual workaround is to build template sensors in Home Assistant that flatten the
 forecast into attributes, and subscribe to those. That puts device presentation logic in the
 hub, and you do it again for the next dashboard.
 
-`ha_action` makes the round trip declarative:
+This makes the round trip declarative:
 
 ```yaml
 ha_action:
@@ -60,7 +78,7 @@ sensor:
 That is the whole thing: an entity on the device, fed from an action response, with nothing
 added to Home Assistant.
 
-## Paths
+### Naming a value
 
 **Home Assistant keys action responses by entity id, and entity ids contain dots.**
 `weather.get_forecasts` returns `{"weather.home": {"forecast": [...]}}`, so the first segment of
@@ -86,14 +104,14 @@ A path is relative to the action's **own response** — the `{"response": ...}` 
 Assistant wraps it in is already unwrapped for you.
 
 Resolving to nothing is not an error. A forecast is twelve entries long today and ten tomorrow,
-so `sensor` publishes `NaN`, `text_sensor` publishes `""`, and `binary_sensor` keeps its last
+so a sensor publishes `NaN`, a text sensor publishes `""`, and a binary sensor keeps its last
 state. A JSON `null` counts as nothing; a genuine `0` does not, because 0.0 mm of precipitation
 is data.
 
-## Server-side templates
+### Reshaping the response before it is sent
 
 `response_template:` is rendered by **Home Assistant, before the reply crosses the wire**, so
-you can reshape a large response into exactly what the device needs:
+you can cut a large response down to exactly what the device needs:
 
 ```yaml
 ha_action:
@@ -139,19 +157,19 @@ to feed a panel.
 
 Home Assistant only renders a `response_template` inside the branch that handles actions
 returning a response, and there is no generic `homeassistant.*` action that returns one. So
-something has to carry the template. `ha_action` uses `recorder.get_statistics` with a
-`statistic_ids` that matches nothing and a `start_time` fixed in 2099: `recorder` ships in
-`default_config`, the query does no real database work and returns `{"statistics": {}}`, and
-fixing the date means no clock is involved — which is why `template:` needs no `time:`
-component. Override it with `carrier_action:` and `carrier_data:` if you have a cheaper one.
+something has to carry the template. This uses `recorder.get_statistics` with a `statistic_ids`
+that matches nothing and a `start_time` fixed in 2099: `recorder` ships in `default_config`, the
+query does no real database work and returns `{"statistics": {}}`, and fixing the date means no
+clock is involved — which is why `template:` needs no `time:` component. Override it with
+`carrier_action:` and `carrier_data:` if you have a cheaper one.
 
 A rendered template is `literal_eval`'d by Home Assistant before encoding, so `[1, 2]` arrives
 as a real array. `literal_eval` does not know JSON's `true`/`false`/`null` though, so anything
-ending in `| tojson` over a boolean comes back as a *string* holding JSON. `ha_action` parses
-that case for you; you should not have to care.
+ending in `| tojson` over a boolean comes back as a *string* holding JSON. That case is parsed
+for you; you should not have to care.
 </details>
 
-## Passing something that isn't a string
+### Passing values that are not strings
 
 Action data crosses the wire as strings, and Home Assistant's schemas usually coerce them —
 `cv.ensure_list` turns `"sensor.a"` into `["sensor.a"]`, so single values need no wrapper. Two
@@ -159,9 +177,9 @@ names do not work that way:
 
 ```yaml
 data:
-  statistic_ids: sensor.a,sensor.b      # WRONG - one id named "sensor.a,sensor.b"
+  statistic_ids: sensor.a,sensor.b                 # WRONG — one id named "sensor.a,sensor.b"
 data_template:
-  statistic_ids: '{{ ["sensor.a", "sensor.b"] }}'   # a real two-element list
+  statistic_ids: '{{ ["sensor.a", "sensor.b"] }}'  # a real two-element list
 ```
 
 `data_template` values are rendered by Home Assistant and then literal-evaluated, so lists,
@@ -172,30 +190,29 @@ data_template:
   config_entry: "{{ config_entry_id('sensor.my_integration_thing') }}"
 ```
 
-## Configuration
+### Request options
 
-### `ha_action:`
-
-A list of requests.
+`ha_action:` is a list of requests.
 
 | Key | Default | |
 |---|---|---|
 | `action` | | the action to call, e.g. `weather.get_forecasts`. Exclusive with `template` |
 | `template` | | server-side Jinja, with a carrier action supplied for you. Exclusive with `action` |
-| `data` | `{}` | action data. Values may be lambdas. Home Assistant's schemas coerce single values to lists, so no list wrapper is needed |
-| `data_template` | `{}` | data whose values Home Assistant renders as Jinja and then literal-evals — the only way to pass something that is not a string (see below) |
+| `data` | `{}` | action data. Values may be lambdas |
+| `data_template` | `{}` | data whose values Home Assistant renders as Jinja and then literal-evals — the only way to pass something that is not a string |
 | `variables` | `{}` | variables in scope for `data_template` |
 | `response_template` | | Jinja that reshapes the response, rendered by Home Assistant |
-| `update_interval` | once per API connection | a duration, or `never` for a request that runs only when asked — from a `button`, or another request's `on_response` |
+| `update_interval` | once per API connection | a duration, or `never` for a request that runs only when asked — from a button, or another request's `on_response` |
 | `retry_interval` | `30s` | first retry after a failure; doubles to a 10 min cap |
 | `timeout` | `20s` | |
 | `retain` | `false` | keep the parsed response between refreshes, for lambdas that walk a whole array. Uses PSRAM where available |
 | `on_response` | | `JsonVariantConst response` |
 | `on_error` | | `std::string error` — Home Assistant reached the action and it failed |
 
-### Entity platforms
+### Entity options
 
-All three take `ha_action_id` and `path`, plus everything their platform normally accepts.
+All four platforms take `ha_action_id`, plus everything their platform normally accepts. The
+first three also take `path`.
 
 | Platform | |
 |---|---|
@@ -204,7 +221,7 @@ All three take `ha_action_id` and `path`, plus everything their platform normall
 | `binary_sensor` | the value as a boolean, or numeric against `threshold:` when given |
 | `button` | re-runs the request |
 
-## Reading a retained response
+### Reading a retained response
 
 ```cpp
 if (id(forecast)->has_response()) {
@@ -217,9 +234,7 @@ Needs `retain: true`; without it the parsed document lives only for the duration
 
 ---
 
-# `ha_history`
-
-<a name="ha_history"></a>
+## History
 
 <p align="center">
   <img src="docs/banner.png" width="900"
@@ -230,12 +245,12 @@ ESPHome's built-in `homeassistant` sensor gives a device live values pushed over
 API — but only from the moment it connects. A panel drawing a time-series graph boots to an
 empty chart and spends hours filling it in.
 
-A `ha_history` sensor behaves **exactly like a `homeassistant` sensor** — same `entity_id`,
-same live pushes, same `NaN` for `unavailable` — and additionally keeps one value per bucket
-(5 minutes or an hour) over a window (a rolling duration, or today so far). On startup it asks
-Home Assistant for the recent past and hands your renderer a filled buffer within a few
-hundred milliseconds of connecting. From then on the live pushes extend the same buffer, so
-there is no seam between "history" and "now".
+A `ha_history` sensor behaves **exactly like a `homeassistant` sensor** — same `entity_id`, same
+live pushes, same `NaN` for `unavailable` — and additionally keeps one value per bucket (5
+minutes or an hour) over a window (a rolling duration, or today so far). On startup it asks Home
+Assistant for the recent past and hands your renderer a filled buffer within a few hundred
+milliseconds of connecting. From then on the live pushes extend the same buffer, so there is no
+seam between "history" and "now".
 
 ```yaml
 time:
@@ -257,14 +272,13 @@ sensor:
       - script.execute: redraw
 ```
 
-## How it works
+### How it works
 
 History comes from Home Assistant's **recorder statistics** — the same 5-minute and hourly
-aggregates that draw the graphs in Home Assistant's own UI. The hub sends the
-`recorder.get_statistics` action over the native API with a `response_template`, and Home
-Assistant renders that Jinja *server-side* into a compact list of `[bucket index, value]` pairs
-before it crosses the wire: a full day at 5-minute resolution is ~3–5 KB rather than the 26 KB
-of raw statistics rows.
+aggregates that draw the graphs in Home Assistant's own UI. The request goes out as
+`recorder.get_statistics` with a `response_template`, and Home Assistant renders that Jinja
+*server-side* into a compact list of `[bucket index, value]` pairs before it crosses the wire: a
+full day at 5-minute resolution is ~3–5 KB rather than the 26 KB of raw statistics rows.
 
 Live pushes are then folded into the current bucket the way Home Assistant computes its own
 statistics: the `mean` is time-weighted, the value in force at the bucket boundary is carried
@@ -272,23 +286,13 @@ in, and `unavailable` holds the previous value rather than poisoning the bucket.
 arithmetic is what makes backfilled and live buckets indistinguishable.
 
 Seven minutes after the first load, one narrow follow-up request repairs the bucket that was in
-progress at boot — the only one that can't match, because the device saw only part of it and
+progress at boot — the only one that cannot match, because the device saw only part of it and
 Home Assistant's newest row lags the clock by up to five minutes.
 
-## Requirements
+### Shared defaults
 
-- Entities with a **`state_class`** (`measurement`, `total` or `total_increasing`). That is
-  what gives an entity statistics. Text sensors, binary sensors and plain sensors have none,
-  and their raw history is far too large to pull onto a microcontroller (one power sensor
-  measured 577 KB for a day; its statistics were 26 KB).
-- `time: platform: homeassistant` (or another time source with the same timezone as HA), so
-  `today` and the bucket boundaries agree with Home Assistant's.
-
-## Configuration
-
-### `ha_history:` (hub, optional)
-
-Sets defaults for every sensor. Auto-loaded by the platform; only write it to change a default.
+`ha_history:` sets defaults for every sensor. It is auto-loaded by the platform, so write it
+only to change one.
 
 | Key | Default | |
 |---|---|---|
@@ -297,52 +301,53 @@ Sets defaults for every sensor. Auto-loaded by the platform; only write it to ch
 | `retry_interval` | `30s` | first retry after a failed request; doubles to a 10 min cap |
 | `time_id` | the sole `time:` component | |
 
-### `sensor: platform: ha_history`
+### Sensor options
 
-Everything the `homeassistant` sensor platform accepts (`entity_id`, `name`, `id`, filters,
-`internal` — default `true`, …), plus:
+`sensor: platform: ha_history` takes everything the `homeassistant` sensor platform accepts
+(`entity_id`, `name`, `id`, filters, `internal` — default `true`, …), plus:
 
 | Key | |
 |---|---|
-| `history.window` | overrides the hub default |
-| `history.bucket` | overrides the hub default |
-| `history.statistic` | `mean` (default), `min`, `max`, `state`, `change`. `mean/min/max` for `state_class: measurement`; `change` for `total_increasing` meters (a reset counts from zero, as HA does). |
-| `on_history_loaded` | backfill merged into the buffer (fires per successful load) |
+| `history.window` | overrides the shared default |
+| `history.bucket` | overrides the shared default |
+| `history.statistic` | `mean` (default), `min`, `max`, `state`, `change`. `mean`/`min`/`max` for `state_class: measurement`; `change` for `total_increasing` meters, where a reset counts from zero as Home Assistant does it |
+| `on_history_loaded` | backfill merged into the buffer; fires per successful load |
 | `on_history_update` | a live bucket closed, or the day rolled over |
 
 `attribute:` is rejected — statistics exist only for the entity's state.
 
-### `button: platform: ha_history`
+`button: platform: ha_history` re-runs the backfill.
 
-Re-runs the backfill.
-
-### Limits
+### Size limits
 
 The reply must fit one API frame (32 KiB), and **exceeding it drops the API connection**. So the
-size is bounded at config time (`esphome config` rejects the offending sensor) and guarded at
+size is bounded at config time — `esphome config` rejects the offending sensor — and guarded at
 runtime:
 
-- `window / bucket ≤ 1000 points` with PSRAM, `≤ 500` without. 24 h @ 5 min = 288; 7 d @ hour = 168.
-- `bucket: 5min` needs `window ≤ 10 days` — Home Assistant purges 5-minute statistics after that.
+- `window / bucket ≤ 1000 points` with PSRAM, `≤ 500` without. 24 h at 5 min is 288; 7 d hourly
+  is 168.
+- `bucket: 5min` needs `window ≤ 10 days`, because Home Assistant purges 5-minute statistics
+  after that.
 
-## Reading the buffer
+### Reading the buffer
 
 ```cpp
-id(pv).history_loaded()                       // backfill has landed
-id(pv).history_size()                         // points held
-id(pv).history_copy(starts, values, cap)      // parallel arrays, oldest first; returns count
+id(pv).history_loaded()                         // backfill has landed
+id(pv).history_size()                           // points held
+id(pv).history_copy(starts, values, cap)        // parallel arrays, oldest first; returns count
 id(pv).history_min(), id(pv).history_max()
-id(pv).bucket_seconds()                       // 300 or 3600
+id(pv).bucket_seconds()                         // 300 or 3600
 id(pv).window_start(), id(pv).window_seconds()  // for the x axis; epoch UTC
-id(pv).history()                              // const SeriesBuffer & (at(i).start / .value)
+id(pv).history()                                // const SeriesBuffer & (at(i).start / .value)
 ```
 
 Gaps are represented by absence — a bucket Home Assistant has no row for is simply not in the
-buffer, so map x by `start`, not by index. Bucket starts are UTC-epoch aligned, as HA's are.
+buffer, so map x by `start`, not by index. Bucket starts are UTC-epoch aligned, as Home
+Assistant's are.
 
-### LVGL
+### Drawing with LVGL
 
-`components/ha_history/lvgl_helpers.h` compiles when the config has an `lvgl:` block, and offers:
+`components/ha_history/lvgl_helpers.h` compiles when the config has an `lvgl:` block:
 
 ```cpp
 using namespace esphome::ha_history;
@@ -355,12 +360,12 @@ lv_line_set_points(id(my_line), pts, n);
 ```
 
 See `examples/lvgl_sparkline.yaml`. Call both from `on_history_loaded` and `on_history_update`.
-ESPHome has no LVGL `chart` widget (as of 2026.8), which is why these exist.
+ESPHome has no LVGL `chart` widget as of 2026.8, which is why these exist.
 
-## Behaviour worth knowing
+### Behaviour worth knowing
 
-- **Backfilled buckets win** where a live bucket already exists. HA's statistics come from the
-  full sample stream; the device's live bucket from whatever it happened to see.
+- **Backfilled buckets win** where a live bucket already exists. Home Assistant's statistics
+  come from the full sample stream; the device's live bucket from whatever it happened to see.
 - **Two Home Assistant instances** connected to one device both push states, so live samples
   arrive twice — harmless to a time-weighted mean. History is requested from one of them.
 - **Units.** Statistics come back in the entity's *stored* unit; live pushes in its *display*
@@ -371,54 +376,43 @@ ESPHome has no LVGL `chart` widget (as of 2026.8), which is why these exist.
 
 ---
 
-# Requirements
-
-Shared by both components:
-
-- **Home Assistant 2025.x or newer**, for action responses in the ESPHome integration. Older
-  versions silently never reply.
-- The device adopted in the ESPHome integration, with **"Allow the device to perform Home
-  Assistant actions"** enabled in the device's options. It defaults to off. When it is off,
-  Home Assistant sends *nothing back* — no error — so the only symptom is a timeout; both
-  components name this option in their warning after two of them.
-- **ESP32 family.** The ESP8266's 8 KiB API frame and 40 KB heap are not enough.
-
-# How requests are made
+## How requests are made
 
 Both components share `components/ha_action/action_client.h`. It exists because ESPHome's
-built-in `homeassistant.action` has four properties that are fine for a button press and not
-for scheduled, unattended use:
+built-in `homeassistant.action` has four properties that are fine for a button press and not for
+scheduled, unattended use:
 
 - It registers its response callback **before** sending, and the server-side send returns
   `void`. Home Assistant subscribes to actions shortly *after* authenticating, so a call fired
-  at boot is dropped — and its callback is already registered. `ActionClient` sends to one
-  client through the per-connection call, which returns `false` in exactly that window, and
-  registers nothing until a send is accepted.
+  at boot is dropped — and its callback is already registered. This sends to one client through
+  the per-connection call, which returns `false` in exactly that window, and registers nothing
+  until a send is accepted.
 - Registered callbacks are erased only by a matching reply. There is no timeout and no removal
-  API, so an unanswered call leaks its callback forever. `ActionClient` holds its own deadline
-  and a `weak_ptr`, so late replies are ignored and absent ones are bounded.
+  API, so an unanswered call leaks its callback forever. This holds its own deadline and a
+  `weak_ptr`, so late replies are ignored and absent ones are bounded.
 - The built-in's `call_id` counter is a function-local static **per template instantiation**, so
   two `homeassistant.action` blocks both start at 1 and can cross-deliver responses. Here one
-  counter is shared by every client in the binary, seeded far from the built-in's.
+  counter is shared by every request in the binary, seeded far from the built-in's.
 - Exceeding the 32 KiB frame **drops the connection**, after which Home Assistant reconnects and
   a scheduled caller would ask again — a flap loop. A connection lost within two seconds of a
   send is treated as "reply too large" and backed off to the ten-minute cap.
 
 Failures are loud and bounded: three unanswered requests on one connection and the component
-stops until the API reconnects or a refresh button is pressed.
+stops until the API reconnects or a refresh button is pressed. Live state pushes keep flowing
+throughout — the subscription is independent of all of this.
 
-# Development
+## Development
 
-`components/ha_history/series.h` (buffer and bucket arithmetic) and
-`components/ha_action/path.h` (the path walker) are plain C++17 with no ESPHome dependency, and
-the path grammar is plain Python. `tests/` runs all three on the host:
+`components/ha_history/series.h` (buffer and bucket arithmetic) and `components/ha_action/path.h`
+(the path walker) are plain C++17 with no ESPHome dependency, and the path grammar is plain
+Python. `tests/` runs all three on the host:
 
 ```sh
 make -C tests test
 ```
 
-CI compiles the examples for `esp32` and `esp32p4` on every push.
+CI compiles the examples for the ESP32 and the ESP32-P4 on every push.
 
-# License
+## License
 
 MIT.
